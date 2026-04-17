@@ -1,0 +1,6 @@
+{
+  "name": "EventVoice AI",
+  "description": "Automated event notification assistant. Generate human-like call scripts and simulate voice notifications.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
