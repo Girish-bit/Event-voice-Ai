@@ -8,7 +8,8 @@ import {
   signOut,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
-  updateProfile
+  updateProfile,
+  sendPasswordResetEmail
 } from '../lib/firebase';
 
 interface AuthContextType {
@@ -17,6 +18,7 @@ interface AuthContextType {
   login: () => Promise<void>;
   loginWithEmail: (email: string, pass: string) => Promise<void>;
   register: (email: string, pass: string, name: string) => Promise<void>;
+  resetPassword: (email: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -64,6 +66,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const resetPassword = async (email: string) => {
+    try {
+      await sendPasswordResetEmail(auth, email);
+    } catch (error: any) {
+      console.error("Password reset failed:", error);
+      throw error;
+    }
+  };
+
   const logout = async () => {
     try {
       await signOut(auth);
@@ -73,7 +84,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, loginWithEmail, register, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, loginWithEmail, register, resetPassword, logout }}>
       {children}
     </AuthContext.Provider>
   );

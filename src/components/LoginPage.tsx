@@ -4,24 +4,66 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Phone, Sparkles, LogIn, UserPlus, Mail, Lock, User } from 'lucide-react';
+import { Phone, Sparkles, LogIn, UserPlus, Mail, Lock, User, Eye, EyeOff, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
 
 export function LoginPage() {
-  const { login, loginWithEmail, register } = useAuth();
-  const [isRegistering, setIsRegistering] = useState(false);
+  const { login, loginWithEmail, register, resetPassword } = useAuth();
+  const [isRegistering, setIsRegistering] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
+  const [isTroubleOpen, setIsTroubleOpen] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [isAuthReady, setIsAuthReady] = useState(false);
+
+  // Connection shim for perfection
+  React.useEffect(() => {
+    const timer = setTimeout(() => setIsAuthReady(true), 800);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const validateEmail = (email: string) => {
+    return String(email)
+      .toLowerCase()
+      .match(
+        /^(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/
+      );
+  };
+
+  const handleResetPassword = async () => {
+    if (!email.trim() || !validateEmail(email.trim())) {
+      toast.error("Please enter a valid email address first.");
+      return;
+    }
+    setLoading(true);
+    try {
+      await resetPassword(email.trim());
+      toast.success("Password reset email sent! Check your inbox.");
+      setIsResettingPassword(false);
+    } catch (error: any) {
+      toast.error(error.message || "Failed to send reset email.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     
     const trimmedEmail = email.trim();
-    const trimmedPassword = password; // Passwords shouldn't be trimmed usually, but often people accidentally add space at end of email
+    const trimmedPassword = password;
+
+    if (!validateEmail(trimmedEmail)) {
+      toast.error("Please enter a valid email address.");
+      setLoading(false);
+      return;
+    }
 
     try {
       if (isRegistering) {
@@ -29,35 +71,51 @@ export function LoginPage() {
         if (password.length < 6) throw new Error("Password must be at least 6 characters.");
         
         await register(trimmedEmail, trimmedPassword, name.trim());
-        toast.success("Account created successfully!");
+        setSuccess(true);
+        toast.success(`Welcome to VoxForge, ${name.trim()}!`);
       } else {
         await loginWithEmail(trimmedEmail, trimmedPassword);
-        toast.success("Logged in successfully!");
+        setSuccess(true);
+        toast.success("Welcome back!");
       }
     } catch (error: any) {
       console.error("Auth error:", error.code, error.message);
       
       let message = "Authentication failed. Please try again.";
+      let description = "";
       
       if (error.code === 'auth/invalid-credential') {
-        message = "Incorrect email or password. If you haven't registered yet, please use the Register tab.";
+        message = "Invalid email or password.";
+        description = "Check your password or register if you haven't yet. If you used Google before, link your account manually or just use the Google button.";
       } else if (error.code === 'auth/user-not-found') {
-        message = "No account found with this email. Please register first.";
+        message = "Account not found.";
+        description = "We couldn't find an account with this email. Switch to the 'Register' tab to create one.";
       } else if (error.code === 'auth/wrong-password') {
-        message = "Incorrect password. Please try again.";
+        message = "Incorrect password.";
       } else if (error.code === 'auth/operation-not-allowed') {
-        message = "Email/Password login is not enabled in Firebase. Please enable it in the Firebase Console.";
+        message = "Configuration Issue.";
+        description = "Email/Password sign-ins are currently restricted in the console. Please verify your Firebase project settings.";
       } else if (error.code === 'auth/email-already-in-use') {
-        message = "This email is already registered. Please sign in instead.";
-      } else if (error.message) {
-        message = error.message;
+        message = "Email already registered.";
+        description = "This account already exists. Please switch to the 'Sign In' tab to log in, or use 'Forgot Password'.";
+      } else if (error.code === 'auth/too-many-requests') {
+        message = "Too many attempts.";
+        description = "This account has been temporarily disabled due to many failed login attempts. Reset your password or try again later.";
       }
       
-      toast.error(message, {
-        duration: 5000,
+      toast(message, {
+        description: description,
+        duration: 8000,
+        action: error.code === 'auth/invalid-credential' ? {
+          label: "Register Now",
+          onClick: () => setIsRegistering(true)
+        } : error.code === 'auth/email-already-in-use' ? {
+          label: "Sign In Instead",
+          onClick: () => setIsRegistering(false)
+        } : undefined
       });
     } finally {
-      setLoading(false);
+      if (!success) setLoading(false);
     }
   };
 
@@ -71,14 +129,46 @@ export function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#fdfcff] p-4 font-sans">
+    <div className="min-h-screen flex items-center justify-center bg-[#fdfcff] p-4 font-sans overflow-hidden">
+      {!isAuthReady && (
+        <motion.div 
+          initial={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[100] bg-white flex flex-col items-center justify-center"
+        >
+          <div className="w-12 h-12 bg-primary/10 rounded-2xl flex items-center justify-center mb-4">
+            <Lock className="w-6 h-6 text-primary animate-pulse" />
+          </div>
+          <p className="text-xs font-bold text-zinc-400 uppercase tracking-widest animate-pulse">Securing Connection...</p>
+        </motion.div>
+      )}
+
+      {success && (
+        <motion.div 
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="fixed inset-0 z-[100] bg-white/80 backdrop-blur-md flex flex-col items-center justify-center text-center p-6"
+        >
+          <motion.div
+            initial={{ scale: 0.5, rotate: -20 }}
+            animate={{ scale: 1, rotate: 0 }}
+            transition={{ type: "spring", damping: 12 }}
+            className="w-20 h-20 bg-green-500 rounded-3xl flex items-center justify-center mb-6 shadow-xl shadow-green-200"
+          >
+            <CheckCircle2 className="w-10 h-10 text-white" />
+          </motion.div>
+          <h2 className="text-3xl font-bold tracking-tight text-zinc-900">Success!</h2>
+          <p className="text-zinc-500 mt-2">Redirecting you to the dashboard...</p>
+        </motion.div>
+      )}
+
       <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.4 }}
-        className="w-full max-w-md"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6, ease: "easeOut" }}
+        className="w-full max-w-md relative"
       >
-        <Card className="glass-card overflow-hidden border-none shadow-2xl relative">
+        <Card className="glass-card overflow-hidden border-none shadow-2xl relative z-10">
           <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none">
             <Sparkles className="w-48 h-48" />
           </div>
@@ -91,9 +181,9 @@ export function LoginPage() {
             >
               <Phone className="w-8 h-8 text-white -rotate-12" />
             </motion.div>
-            <CardTitle className="text-3xl font-bold tracking-tight">Student Voice Pro</CardTitle>
+            <CardTitle className="text-3xl font-bold tracking-tight">VoxForge AI</CardTitle>
             <CardDescription className="text-zinc-500 mt-2">
-              Automated Voice Announcements for College Fests
+              Automated Voice Announcements for Everyone
             </CardDescription>
           </CardHeader>
 
@@ -172,17 +262,59 @@ export function LoginPage() {
                       <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
                       <Input 
                         id="password"
-                        type="password"
+                        type={showPassword ? "text" : "password"}
                         placeholder="••••••••"
-                        className="pl-10 h-11"
+                        className="pl-10 pr-10 h-11"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                         required
                       />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 focus:outline-none"
+                      >
+                        {showPassword ? (
+                          <EyeOff className="w-4 h-4" />
+                        ) : (
+                          <Eye className="w-4 h-4" />
+                        )}
+                      </button>
                     </div>
+                    {isRegistering && password.length > 0 && (
+                      <div className="flex gap-1 items-center mt-2">
+                        <div className={`h-1 flex-1 rounded-full transition-colors ${password.length >= 6 ? 'bg-green-500' : 'bg-red-400'}`} />
+                        <div className={`h-1 flex-1 rounded-full transition-colors ${password.length >= 8 ? 'bg-green-500' : 'bg-zinc-200'}`} />
+                        <div className={`h-1 flex-1 rounded-full transition-colors ${password.length >= 12 ? 'bg-green-500' : 'bg-zinc-200'}`} />
+                        <span className="text-[10px] font-bold text-zinc-400 ml-2 uppercase">
+                          {password.length < 6 ? 'Too Short' : password.length < 10 ? 'Fair' : 'Strong'}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </motion.div>
               </AnimatePresence>
+
+              {!isRegistering && (
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setIsResettingPassword(true)}
+                    className="text-[10px] font-bold text-primary hover:underline uppercase tracking-wider"
+                  >
+                    Forgot Password?
+                  </button>
+                </div>
+              )}
+
+              {!isRegistering && (
+                <div className="bg-amber-50 border border-amber-100 p-3 rounded-lg flex gap-3 animate-in fade-in slide-in-from-top-1">
+                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <p className="text-[10px] text-amber-700 leading-tight">
+                    <strong>New here?</strong> You must register before signing in with an email and password.
+                  </p>
+                </div>
+              )}
 
               <Button type="submit" className="w-full h-12 font-bold mt-2" disabled={loading}>
                 {loading ? (
@@ -224,12 +356,103 @@ export function LoginPage() {
               Google
             </Button>
             
-            <p className="text-[10px] text-center text-zinc-400 mt-4 uppercase tracking-widest font-bold">
-              Secure Coordinator Portal
-            </p>
+            <div className="mt-8 pt-6 border-t border-zinc-100">
+              <p className="text-[10px] text-center text-zinc-400 uppercase tracking-[0.2em] font-bold">
+                Founded by Girish G
+              </p>
+              <p className="text-[9px] text-center text-zinc-300 mt-1">
+                Universal Accessibility • Powered by AI
+              </p>
+            </div>
           </CardContent>
         </Card>
       </motion.div>
+
+      <div className="fixed bottom-4 left-1/2 -translate-x-1/2 w-full max-w-xs">
+        <button 
+          onClick={() => setIsTroubleOpen(!isTroubleOpen)}
+          className="w-full text-[10px] font-bold text-zinc-400 hover:text-zinc-600 uppercase tracking-widest flex items-center justify-center gap-2"
+        >
+          <AlertCircle className="w-3 h-3" />
+          Login Issues? Click for Help
+        </button>
+        
+        <AnimatePresence>
+          {isTroubleOpen && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 10 }}
+              className="mt-2 bg-white border border-zinc-200 p-4 rounded-xl shadow-xl text-[11px] text-zinc-600 space-y-3"
+            >
+              <div className="space-y-1">
+                <p className="font-bold text-zinc-900 border-b border-zinc-100 pb-1 mb-2">Troubleshooting Guide</p>
+                <div className="flex gap-2">
+                  <span className="font-bold text-primary">1.</span>
+                  <p><strong>Register First:</strong> You cannot "Sign In" until you have created an account on the "Register" tab.</p>
+                </div>
+                <div className="flex gap-2">
+                  <span className="font-bold text-primary">2.</span>
+                  <p><strong>Check Firebase:</strong> Ensure "Email/Password" is <strong>Enabled</strong> in your Firebase Console under Authentication.</p>
+                </div>
+                <div className="flex gap-2">
+                  <span className="font-bold text-primary">3.</span>
+                  <p><strong>Google Login:</strong> If you use Google, you don't have a password. Use the Google button instead.</p>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      <AnimatePresence>
+        {isResettingPassword && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/40 backdrop-blur-[2px] z-50 flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm space-y-4"
+            >
+              <div className="text-center space-y-2">
+                <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Mail className="w-6 h-6 text-primary" />
+                </div>
+                <h3 className="text-lg font-bold">Reset Password</h3>
+                <p className="text-sm text-zinc-500">
+                  Enter your email and we'll send you a link to reset your password.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="reset-email">Email Address</Label>
+                <Input 
+                  id="reset-email" 
+                  type="email" 
+                  placeholder="your@email.com" 
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="h-11"
+                />
+              </div>
+
+              <div className="flex flex-col gap-2 pt-2">
+                <Button onClick={handleResetPassword} disabled={loading} className="font-bold h-11">
+                  {loading ? <Sparkles className="w-4 h-4 animate-spin mr-2" /> : "Send Reset Link"}
+                </Button>
+                <Button variant="ghost" onClick={() => setIsResettingPassword(false)} className="font-bold underline text-xs">
+                  Cancel
+                </Button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
